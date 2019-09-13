@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
+  <metadata>
+    <id>DatabaseCaseExtractor</id>
+    <version>1.0.0.0</version>
+    <description>DatabaseCaseExtractor provides logic to export and import busines cases from/into a database. The projects is written in C# and uses .net core entity framework.</description>
+    <authors>Conrad Conzett</authors>
+    <projectUrl>https://github.com/conradconzett/DatabaseCaseExtractor</projectUrl>
+    <license type="expression">MIT</license>
+  </metadata>
+</package>

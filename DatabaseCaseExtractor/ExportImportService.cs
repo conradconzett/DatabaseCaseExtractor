@@ -8,11 +8,14 @@ using System.Reflection;
 using System.Linq;
 using System.Linq.Dynamic.Core;
 using System.Linq.Expressions;
+using DatabaseCaseExtractor.Attributes;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
+using System.ComponentModel.DataAnnotations;
 
 namespace DatabaseCaseExtractor
 {
-    public class ExportImportService<T>: IExportImportService
-        where T: class
+    public class ExportImportService<T> : IExportImportService
+        where T : class
     {
         private DbContext _context;
         public ExportImportService(DbContext dbContext)
@@ -37,26 +40,63 @@ namespace DatabaseCaseExtractor
                 Type[] typeArgs = { typeof(T) };
                 Type genericType = typeof(DbSet<>);
 
-                IQueryable<T> queryable = GetSet<T>(_context).AsNoTracking<T>();
+                IQueryable<T> queryable = GetSet(_context).AsNoTracking<T>();
                 if (exportLayout.EntityPrimaryValue != null)
                 {
-                    string equalString = "";
-                    switch (exportLayout.EntityPrimaryKeyType.ToUpper())
+                    if (exportLayout.EntityPrimaryKeyType == null || exportLayout.EntityPrimaryKeyType == "")
                     {
-                        case "GUID":
-                            equalString = string.Format(".Equals(Guid.Parse(\"{0}\"))", exportLayout.EntityPrimaryValue);
-                            break;
-                        case "STRING":
-                            equalString = string.Format("== \"{0}\"", exportLayout.EntityPrimaryValue);
-                            break;
-                        case "INT":
-                            equalString = string.Format("== {0}", exportLayout.EntityPrimaryValue);
-                            break;
+                        // Get the key property
+                        foreach (PropertyInfo propertyInfo in typeof(T).GetProperties())
+                        {
+                            if (Attribute.IsDefined(propertyInfo, typeof(KeyAttribute)))
+                            {
+                                exportLayout.EntityPrimaryKey = propertyInfo.Name;
+                                exportLayout.EntityPrimaryKeyType = propertyInfo.PropertyType.Name.ToUpper();
+                                break;
+                            }
+                        }
+                    }
+                    if (exportLayout.EntityPrimaryKey != null &&
+                        (exportLayout.EntityPrimaryKeyType == null || exportLayout.EntityPrimaryKeyType == ""))
+                    {
+                        PropertyInfo propertyInfo = typeof(T).GetProperty(exportLayout.EntityPrimaryKey);
+                        exportLayout.EntityPrimaryKeyType = propertyInfo.PropertyType.Name.ToUpper();
+                    }
+                    string equalString = "";
+                    if (exportLayout.EntityPrimaryKeyType != null && exportLayout.EntityPrimaryValue != "")
+                    {
+                        switch (exportLayout.EntityPrimaryKeyType.ToUpper())
+                        {
+                            case "GUID":
+                                equalString = string.Format(".Equals(Guid.Parse(\"{0}\"))", exportLayout.EntityPrimaryValue);
+                                break;
+                            case "STRING":
+                                equalString = string.Format("== \"{0}\"", exportLayout.EntityPrimaryValue);
+                                break;
+                            case "INT":
+                                equalString = string.Format("== {0}", exportLayout.EntityPrimaryValue);
+                                break;
+                        }
+                        Expression<Func<T, bool>> expression = DynamicExpressionParser.ParseLambda<T, bool>(null, false,
+                            exportLayout.EntityPrimaryKey + equalString);
+                        queryable = queryable.Where(expression);
+                    }
+                }
+
+                // Get Includes from Attributes
+                if (exportLayout.Includes == null)
+                {
+                    List<ExportInclude> includes = new List<ExportInclude>();
+                    foreach (PropertyInfo propertyInfo in typeof(T).GetProperties())
+                    {
+                        if (Attribute.IsDefined(propertyInfo, typeof(DatabaseCaseExtractorIncludeAttribute)))
+                        {
+                            includes.Add(new ExportInclude() {
+                                Include = propertyInfo.Name
+                            });
+                        }
                     }
 
-                    Expression<Func<T, bool>> expression = DynamicExpressionParser.ParseLambda<T, bool>(null, false,
-                        exportLayout.EntityPrimaryKey + equalString);
-                    queryable = queryable.Where(expression);
                 }
 
                 if (exportLayout.Includes != null)
@@ -100,7 +140,8 @@ namespace DatabaseCaseExtractor
         /// <param name="importData"></param>
         /// <param name="clear"></param>
         /// <returns></returns>
-        public bool SetImportResult(ExportResult importData, bool clear = true) {
+        public bool SetImportResult(ExportResult importData, bool clear = true)
+        {
 
             var properties = _context.GetType().GetProperties();
             if (clear)
@@ -109,10 +150,10 @@ namespace DatabaseCaseExtractor
                     && p.PropertyType.FullName.Contains("Microsoft.EntityFrameworkCore.DbSet"))
                     .ToList();
 
-                foreach(PropertyInfo set in sets)
+                foreach (PropertyInfo set in sets)
                 {
                     var queryable = (IQueryable)_context.GetType().GetMethod("Set").MakeGenericMethod(set.PropertyType.GetGenericArguments()[0]).Invoke(_context, null);
-                    foreach(object tempRow in queryable)
+                    foreach (object tempRow in queryable)
                     {
                         _context.Remove(tempRow);
                     }
@@ -155,7 +196,7 @@ namespace DatabaseCaseExtractor
         /// <typeparam name="T"></typeparam>
         /// <param name="context"></param>
         /// <returns></returns>
-        private IQueryable<T> GetSet<T>(DbContext context)
+        private IQueryable<T> GetSet(DbContext context)
         {
             // Get the generic type definition 
             MethodInfo method = typeof(DbContext).GetMethod(nameof(DbContext.Set), BindingFlags.Public | BindingFlags.Instance);
@@ -185,6 +226,25 @@ namespace DatabaseCaseExtractor
                 }
             }
             return queryable;
+        }
+        
+        private ExportInclude[] GetIncludesFromAttribute(Type type, List<Type> addedTypes)
+        {
+            List<ExportInclude> includes = new List<ExportInclude>();
+            foreach(PropertyInfo propertyInfo in type.GetProperties())
+            {
+                if (!addedTypes.Contains(propertyInfo.PropertyType) && 
+                    Attribute.IsDefined(propertyInfo, typeof(DatabaseCaseExtractorIncludeAttribute)))
+                {
+                    addedTypes.Add(propertyInfo.PropertyType);
+                    includes.Add(new ExportInclude()
+                    {
+                        Include = propertyInfo.Name,
+                        SubIncludes = GetIncludesFromAttribute(propertyInfo.PropertyType, addedTypes)
+                    });
+                }
+            }
+            return includes.ToArray();
         }
         #endregion
     }

@@ -2,6 +2,11 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <PackageProjectUrl>https://github.com/conradconzett/DatabaseCaseExtractor</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/conradconzett/DatabaseCaseExtractor</RepositoryUrl>
+    <PackageLicenseExpression>https://github.com/conradconzett/DatabaseCaseExtractor/blob/master/LICENSE</PackageLicenseExpression>
+    <Authors>Conrad Conzett</Authors>
+    <Company />
   </PropertyGroup>
 
   <ItemGroup>
