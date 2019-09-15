@@ -89,8 +89,10 @@ namespace DatabaseCaseExtractor.Unittests
             InitData("GetLevel1Test");
             var exportLayout = new ExportLayout()
             {
+                UseModelAttributes = false,
                 EntityPrimaryKey = "Id",
                 EntityPrimaryValue = "542c31f0-35e3-4a7d-a939-803f18f94669",
+                AdditionalData = new ExportLayout[] { }
             };
             var exportResult = _exportService.GetExportResult(exportLayout);
             Assert.True(exportResult.EntityData != null);

@@ -7,7 +7,7 @@ namespace DatabaseCaseExtractor.Interfaces
 {
     public interface IExportImportService
     {
-        ExportResult GetExportResult(ExportLayout exportLayout);
+        ExportResult GetExportResult(ExportLayout exportLayout, bool loadAdditionalData = true);
         bool SetImportResult(ExportResult importData, bool clear);
     }
 }

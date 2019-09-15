@@ -28,7 +28,7 @@ namespace DatabaseCaseExtractor
         /// </summary>
         /// <param name="exportLayout"></param>
         /// <returns></returns>
-        public ExportResult GetExportResult(ExportLayout exportLayout)
+        public ExportResult GetExportResult(ExportLayout exportLayout, bool loadAdditionalData = true)
         {
             var properties = _context.GetType().GetProperties();
 
@@ -84,19 +84,9 @@ namespace DatabaseCaseExtractor
                 }
 
                 // Get Includes from Attributes
-                if (exportLayout.Includes == null)
+                if (exportLayout.Includes == null && exportLayout.UseModelAttributes)
                 {
-                    List<ExportInclude> includes = new List<ExportInclude>();
-                    foreach (PropertyInfo propertyInfo in typeof(T).GetProperties())
-                    {
-                        if (Attribute.IsDefined(propertyInfo, typeof(DatabaseCaseExtractorIncludeAttribute)))
-                        {
-                            includes.Add(new ExportInclude() {
-                                Include = propertyInfo.Name
-                            });
-                        }
-                    }
-
+                    exportLayout.Includes = GetIncludesFromAttribute(typeof(T));
                 }
 
                 if (exportLayout.Includes != null)
@@ -107,8 +97,25 @@ namespace DatabaseCaseExtractor
                     }
                 }
 
+                if (exportLayout.AdditionalData == null && loadAdditionalData && exportLayout.UseModelAttributes)
+                {
+                    List<ExportLayout> additionalDataTables = new List<ExportLayout>();
+                    foreach (PropertyInfo additionalData in properties.Where(p => p.PropertyType.IsGenericType &&
+                         Attribute.IsDefined(p.PropertyType.GetGenericArguments()[0], typeof(AdditionalDataAttribute))).ToList())
+                    {
+                        additionalDataTables.Add(new ExportLayout()
+                        {
+                            EntityName = additionalData.PropertyType.GetGenericArguments()[0].Name
+                        });
+                    }
+                    if (additionalDataTables.Count > 0)
+                    {
+                        exportLayout.AdditionalData = additionalDataTables.ToArray();
+                    }
+                }
+
                 List<ExportResult> additionalDatas = new List<ExportResult>();
-                if (exportLayout.AdditionalData != null)
+                if (exportLayout.AdditionalData != null && loadAdditionalData)
                 {
                     Type additionalType = typeof(ExportImportService<>);
                     foreach (ExportLayout subLayout in exportLayout.AdditionalData)
@@ -118,7 +125,7 @@ namespace DatabaseCaseExtractor
 
                         var addionalInstance = additionalType.MakeGenericType(setAdditionalType.PropertyType.GetGenericArguments()[0]);
                         object subExportLayout = Activator.CreateInstance(addionalInstance, new object[] { _context });
-                        additionalDatas.Add(((IExportImportService)subExportLayout).GetExportResult(subLayout));
+                        additionalDatas.Add(((IExportImportService)subExportLayout).GetExportResult(subLayout, false));
                     }
                 }
 
@@ -227,9 +234,13 @@ namespace DatabaseCaseExtractor
             }
             return queryable;
         }
-        
-        private ExportInclude[] GetIncludesFromAttribute(Type type, List<Type> addedTypes)
+
+        private ExportInclude[] GetIncludesFromAttribute(Type type, List<Type> addedTypes = null)
         {
+            if (addedTypes == null)
+            {
+                addedTypes = new List<Type>();
+            }
             List<ExportInclude> includes = new List<ExportInclude>();
             foreach(PropertyInfo propertyInfo in type.GetProperties())
             {
@@ -237,11 +248,24 @@ namespace DatabaseCaseExtractor
                     Attribute.IsDefined(propertyInfo, typeof(DatabaseCaseExtractorIncludeAttribute)))
                 {
                     addedTypes.Add(propertyInfo.PropertyType);
-                    includes.Add(new ExportInclude()
+
+                    Type[] genericTypes = propertyInfo.PropertyType.GetGenericArguments();
+                    if (genericTypes.Length == 0)
                     {
-                        Include = propertyInfo.Name,
-                        SubIncludes = GetIncludesFromAttribute(propertyInfo.PropertyType, addedTypes)
-                    });
+                        includes.Add(new ExportInclude()
+                        {
+                            Include = propertyInfo.Name,
+                            SubIncludes = GetIncludesFromAttribute(propertyInfo.PropertyType, addedTypes)
+                        });
+                    }
+                    else
+                    {
+                        includes.Add(new ExportInclude()
+                        {
+                            Include = propertyInfo.Name,
+                            SubIncludes = GetIncludesFromAttribute(genericTypes[0], addedTypes)
+                        });
+                    }
                 }
             }
             return includes.ToArray();
