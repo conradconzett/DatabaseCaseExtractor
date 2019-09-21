@@ -8,6 +8,6 @@ namespace DatabaseCaseExtractor.Models
     {
         public string EntityName { get; set; }
         public object EntityData { get; set; }
-        public object[] AdditionalData { get; set; }
+        public ExportResult[] AdditionalData { get; set; }
     }
 }

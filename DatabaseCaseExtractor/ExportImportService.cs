@@ -2,27 +2,29 @@
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
-using System.Text;
 using DatabaseCaseExtractor.Interfaces;
 using System.Reflection;
 using System.Linq;
 using System.Linq.Dynamic.Core;
 using System.Linq.Expressions;
 using DatabaseCaseExtractor.Attributes;
-using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using System.ComponentModel.DataAnnotations;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json;
 
 namespace DatabaseCaseExtractor
 {
     public class ExportImportService<T> : IExportImportService
-        where T : class
+        where T : class, new()
     {
         private DbContext _context;
+        private List<string> _updatedEntries;
         public ExportImportService(DbContext dbContext)
         {
             _context = dbContext;
         }
 
+        #region Public-Methods
         /// <summary>
         /// Collects data from database and returns it
         /// </summary>
@@ -147,10 +149,10 @@ namespace DatabaseCaseExtractor
         /// <param name="importData"></param>
         /// <param name="clear"></param>
         /// <returns></returns>
-        public bool SetImportResult(ExportResult importData, bool clear = true)
+        public void SetImportResult(ExportResult importData, bool clear = true, bool doUpdate = false)
         {
-
             var properties = _context.GetType().GetProperties();
+            // Deletes all entries from the database
             if (clear)
             {
                 List<PropertyInfo> sets = properties.Where(p => p.PropertyType.IsGenericType
@@ -167,8 +169,20 @@ namespace DatabaseCaseExtractor
                 }
                 _context.SaveChanges();
             }
+            if (doUpdate)
+            {
+                _updatedEntries = new List<string>();
+            }
+            SetImportResultWithoutSave(importData, doUpdate);
+            _context.SaveChanges();
+        }
 
-            // Handle additional-data
+        /// <summary>
+        /// Import results without saving
+        /// </summary>
+        /// <param name="importData"></param>
+        public void SetImportResultWithoutSave(ExportResult importData, bool doUpdate = false) {
+            var properties = _context.GetType().GetProperties();
             if (importData.AdditionalData != null)
             {
                 Type additionalType = typeof(ExportImportService<>);
@@ -179,7 +193,11 @@ namespace DatabaseCaseExtractor
 
                     var addionalInstance = additionalType.MakeGenericType(setAdditionalType.PropertyType.GetGenericArguments()[0]);
                     object additionalImportService = Activator.CreateInstance(addionalInstance, new object[] { _context });
-                    ((IExportImportService)additionalImportService).SetImportResult(additionalData, false);
+                    ((IExportImportService)additionalImportService).SetImportResultWithoutSave(additionalData, doUpdate);
+                    if (doUpdate)
+                    {
+                        _context.SaveChanges();
+                    }
                 }
             }
 
@@ -187,14 +205,55 @@ namespace DatabaseCaseExtractor
             PropertyInfo tempSet = properties.Where(p => p.PropertyType.IsGenericType
                 && p.PropertyType.FullName.Contains(importData.EntityName))
                 .FirstOrDefault();
-
-            DbSet<T> importSet = (DbSet<T>)_context.GetType().GetMethod("Set").MakeGenericMethod(tempSet.PropertyType.GetGenericArguments()[0]).Invoke(_context, null);
-            importSet.Add((T)importData.EntityData);
-
-            _context.SaveChanges();
-
-            return true;
+            Type entityProperty = tempSet.PropertyType.GetGenericArguments()[0];
+            PropertyInfo primaryKey = entityProperty
+                .GetProperties().Where(p => 
+                    Attribute.IsDefined(p, typeof(KeyAttribute))
+                ).FirstOrDefault();
+            DbSet<T> importSet = (DbSet<T>)_context.GetType().GetMethod("Set").MakeGenericMethod(entityProperty).Invoke(_context, null);
+            foreach (JObject entityData in (JArray)importData.EntityData)
+            {
+                T tempObject = JsonConvert.DeserializeObject<T>(entityData.ToString());
+                bool addEntry = true;
+                // Check if there is allready an entry with this id
+                if (primaryKey != null)
+                {
+                    object primaryValue = typeof(T).GetProperty(primaryKey.Name).GetValue(tempObject);
+                    T checkEntry = importSet.Find(primaryValue);
+                    if (checkEntry != null)
+                    {
+                        addEntry = false;
+                        if (doUpdate && _updatedEntries == null) {
+                            _updatedEntries = new List<string>();
+                        }
+                        if (doUpdate && !_updatedEntries.Contains(entityProperty.Name + ":" + primaryValue.ToString()))
+                        {
+                            UpdateEntry(checkEntry, tempObject);
+                            _updatedEntries.Add(entityProperty.Name + ":" + primaryValue.ToString());
+                        }
+                    }
+                }
+                if (addEntry)
+                {
+                    importSet.Add(tempObject);
+                }
+            }
         }
+        
+        /// <summary>
+        /// Imports two sets of data and logs all statements and returns them
+        /// </summary>
+        /// <param name="initialData"></param>
+        /// <param name="newData"></param>
+        /// <returns></returns>
+        public List<LogEntry> ExportSQLScripts(ExportResult initialData, ExportResult newData)
+        {
+            SetImportResult(initialData);
+            Logger.DatabaseCaseExtractorLogger.ClearLogs();
+            SetImportResult(newData, false, true);
+            return Logger.DatabaseCaseExtractorLogger.LogEntries;
+        }
+        #endregion
 
         #region Private-Methods
         /// <summary>
@@ -235,6 +294,12 @@ namespace DatabaseCaseExtractor
             return queryable;
         }
 
+        /// <summary>
+        /// Get include attributes from models
+        /// </summary>
+        /// <param name="type"></param>
+        /// <param name="addedTypes"></param>
+        /// <returns></returns>
         private ExportInclude[] GetIncludesFromAttribute(Type type, List<Type> addedTypes = null)
         {
             if (addedTypes == null)
@@ -269,6 +334,31 @@ namespace DatabaseCaseExtractor
                 }
             }
             return includes.ToArray();
+        }
+        
+        private T UpdateEntry(T dbEntry, T newEntry)
+        {
+            // PropertyInfo[] dbContextProperties = _context.GetType().GetProperties();
+            /*
+                                 dbContextProperties.Where(p => p.PropertyType.IsGenericType &&
+                                        p.PropertyType.GetGenericArguments()[0].Name == property.PropertyType.Name).FirstOrDefault();
+
+             */
+            foreach (PropertyInfo property in typeof(T).GetProperties())
+            {
+                //if (!property.PropertyType.IsClass && property.PropertyType.GetGenericArguments().Length == 0)
+                if (property.PropertyType == typeof(string))
+                {
+                    object dbValue = typeof(T).GetProperty(property.Name).GetValue(dbEntry);
+                    object newValue = typeof(T).GetProperty(property.Name).GetValue(newEntry);
+                    if (dbValue != newValue)
+                    {
+                        typeof(T).GetProperty(property.Name).SetValue(dbEntry, newValue);
+                    }
+                }
+                // TODO: ICollection, Class
+            }
+            return dbEntry;
         }
         #endregion
     }
