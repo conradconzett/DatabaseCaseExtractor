@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace DatabaseCaseExtractor.Logger
 {
@@ -35,47 +36,91 @@ namespace DatabaseCaseExtractor.Logger
 
             if (message.Contains("INSERT INTO") || message.Contains("UPDATE") || message.Contains("DELETE")) {
                 // Get Parameters 
-                string[] parameters = GetParameters(message);
-                // Get Query
-                int commandIndex = message.IndexOf("INSERT");
-                if (commandIndex == -1)
+                Dictionary<string, string> parameters = GetParameters(message);
+                foreach(string commandString in message.Split(';'))
                 {
-                    commandIndex = message.IndexOf("UPDATE");
-                }
-                if (commandIndex == -1)
-                {
-                    commandIndex = message.IndexOf("DELETE");
-                }
-                string command = message.Substring(commandIndex);
+                    // Get Query
+                    int commandIndex = commandString.IndexOf("INSERT");
+                    if (commandIndex == -1)
+                    {
+                        commandIndex = commandString.IndexOf("UPDATE");
+                    }
+                    if (commandIndex == -1)
+                    {
+                        commandIndex = commandString.IndexOf("DELETE");
+                    }
+                    if (commandIndex == -1)
+                    {
+                        continue;
+                    }
+                    string command = commandString.Substring(commandIndex);
 
-                if (command.Contains("SELECT @@ROWCOUNT;"))
-                {
-                    command = command.Substring(0, command.IndexOf("SELECT @@ROWCOUNT;") - 2);
-                }
+                    if (command.Contains("SELECT @@ROWCOUNT;"))
+                    {
+                        command = command.Substring(0, command.IndexOf("SELECT @@ROWCOUNT;") - 2);
+                    }
 
-                LogEntry entry = new LogEntry() { Command = command.Replace("\\r\\n", ""), Parameters = parameters };
-                if (!LoggedEntries.Contains(entry.ToString()))
-                {
-                    LogEntries.Add(entry);
-                    LoggedEntries.Add(entry.ToString());
+                    // Get Parameters for this commandString
+                    Dictionary<string, string> tempParameters = new Dictionary<string, string>();
+                    foreach(KeyValuePair<string,string> keyValue in parameters)
+                    {
+                        if (command.Contains(keyValue.Key))
+                        {
+                            tempParameters.Add(keyValue.Key, keyValue.Value);
+                        }
+                    }
+
+
+                    LogEntry entry = new LogEntry() { Command = command.Replace("\\r\\n", ""), Parameters = tempParameters };
+                    
+
+                    if (!LoggedEntries.Contains(entry.ToString()))
+                    {
+                        LogEntries.Add(entry);
+                        LoggedEntries.Add(entry.ToString());
+                    }
                 }
             }
         }
 
-        private string[] GetParameters(string message)
+        private Dictionary<string, string> GetParameters(string message)
         {
-            int startIndex = message.IndexOf("[Parameters=") + 12;
+            int startIndex = message.IndexOf("[Parameters=") + 13;
             int length = message.IndexOf("], CommandType") - startIndex;
-            string[] tempResultList = message
+
+            Dictionary<string, string> result = new Dictionary<string, string>();
+            // Get Parameters-String
+            string onlyParameters = message
+                .Substring(startIndex, length);
+            string[] potentialParameters = onlyParameters.Split(new string[] { "@p" }, StringSplitOptions.RemoveEmptyEntries);
+            foreach(string potentialParameter in potentialParameters)
+            {
+                // Check if it is a parameter -> Means @p[index]=' @p is removed
+                string index = potentialParameter.Substring(0, potentialParameter.IndexOf("='"));
+                if (Regex.IsMatch(index, @"\d"))
+                {
+                    result.Add("@p" + index, potentialParameter.Substring(index.Length + 2, potentialParameter.LastIndexOf("'") - index.Length - 2));
+                }
+            }
+            return result;
+            /*
+
+            List<string> tempResultList = message
                 .Substring(startIndex, length)
                 .Split(new string[] { ", @p" }, StringSplitOptions.RemoveEmptyEntries)
                 .ToList<string>()
                 .Select(s => 
                     TranslateResult(s)
-                )
-                .ToArray();
-
-            return tempResultList;
+                ).ToList();
+            Dictionary<string, string> result = new Dictionary<string, string>();
+            int i = 0;
+            foreach(string value in tempResultList)
+            {
+                result.Add("@p" + i, value);
+                i++;
+            }
+            return result;
+            */
         }
 
         private string TranslateResult(string line)

@@ -211,6 +211,10 @@ namespace DatabaseCaseExtractor
                     Attribute.IsDefined(p, typeof(KeyAttribute))
                 ).FirstOrDefault();
             DbSet<T> importSet = (DbSet<T>)_context.GetType().GetMethod("Set").MakeGenericMethod(entityProperty).Invoke(_context, null);
+            if (importData.EntityData.GetType() == typeof(JObject))
+            {
+                importData.EntityData = new JArray(importData.EntityData);
+            }
             foreach (JObject entityData in (JArray)importData.EntityData)
             {
                 T tempObject = JsonConvert.DeserializeObject<T>(entityData.ToString());
@@ -228,7 +232,7 @@ namespace DatabaseCaseExtractor
                         }
                         if (doUpdate && !_updatedEntries.Contains(entityProperty.Name + ":" + primaryValue.ToString()))
                         {
-                            UpdateEntry(checkEntry, tempObject);
+                            Helpers.UpdateModel(checkEntry, tempObject, _context);
                             _updatedEntries.Add(entityProperty.Name + ":" + primaryValue.ToString());
                         }
                     }
@@ -334,31 +338,6 @@ namespace DatabaseCaseExtractor
                 }
             }
             return includes.ToArray();
-        }
-        
-        private T UpdateEntry(T dbEntry, T newEntry)
-        {
-            // PropertyInfo[] dbContextProperties = _context.GetType().GetProperties();
-            /*
-                                 dbContextProperties.Where(p => p.PropertyType.IsGenericType &&
-                                        p.PropertyType.GetGenericArguments()[0].Name == property.PropertyType.Name).FirstOrDefault();
-
-             */
-            foreach (PropertyInfo property in typeof(T).GetProperties())
-            {
-                //if (!property.PropertyType.IsClass && property.PropertyType.GetGenericArguments().Length == 0)
-                if (property.PropertyType == typeof(string))
-                {
-                    object dbValue = typeof(T).GetProperty(property.Name).GetValue(dbEntry);
-                    object newValue = typeof(T).GetProperty(property.Name).GetValue(newEntry);
-                    if (dbValue != newValue)
-                    {
-                        typeof(T).GetProperty(property.Name).SetValue(dbEntry, newValue);
-                    }
-                }
-                // TODO: ICollection, Class
-            }
-            return dbEntry;
         }
         #endregion
     }
