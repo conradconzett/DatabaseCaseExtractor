@@ -70,7 +70,6 @@ namespace DatabaseCaseExtractor.Logger
                         }
                     }
 
-
                     LogEntry entry = new LogEntry() { Command = command.Replace("\\r\\n", ""), Parameters = tempParameters };
                     
 
@@ -103,34 +102,6 @@ namespace DatabaseCaseExtractor.Logger
                 }
             }
             return result;
-            /*
-
-            List<string> tempResultList = message
-                .Substring(startIndex, length)
-                .Split(new string[] { ", @p" }, StringSplitOptions.RemoveEmptyEntries)
-                .ToList<string>()
-                .Select(s => 
-                    TranslateResult(s)
-                ).ToList();
-            Dictionary<string, string> result = new Dictionary<string, string>();
-            int i = 0;
-            foreach(string value in tempResultList)
-            {
-                result.Add("@p" + i, value);
-                i++;
-            }
-            return result;
-            */
-        }
-
-        private string TranslateResult(string line)
-        {
-            line = line.Replace("p=", "").Substring(line.IndexOf("'") + 1);
-            if (line.Contains("' (Size ="))
-            {
-                line = line.Substring(0, line.IndexOf("' (Size =") + 1);
-            }
-            return line.Substring(0, line.Length - 1);
         }
 
         public IDisposable BeginScope<TState>(TState state) => ScopeProvider?.Push(state) ?? NullScope.Instance;

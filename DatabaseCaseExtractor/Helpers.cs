@@ -2,6 +2,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -14,6 +15,19 @@ namespace DatabaseCaseExtractor
         public static T UpdateModel<T>(T oldEntity, T newEntity, DbContext context)
             where T: class, new() 
         {
+            if (oldEntity == null)
+            {
+                DbSet<T> importSet = (DbSet<T>)context.GetType().GetMethod("Set").MakeGenericMethod(typeof(T)).Invoke(context, null);
+                importSet.Add(newEntity);
+                return newEntity;
+            }
+            if (newEntity == null)
+            {
+                DbSet<T> importSet = (DbSet<T>)context.GetType().GetMethod("Set").MakeGenericMethod(typeof(T)).Invoke(context, null);
+                importSet.Remove(oldEntity);
+                return oldEntity;
+            }
+
             foreach (PropertyInfo property in typeof(T).GetProperties())
             {
                 object dbValue = typeof(T).GetProperty(property.Name).GetValue(oldEntity);
@@ -45,17 +59,26 @@ namespace DatabaseCaseExtractor
                             // We have a array of values in the old and in the new value
                             // so we have to loop through the new values find them in the 
                             // old one and update them. 
-                            int rowIndex = 0;
-
                             Type listType = typeof(List<>).MakeGenericType(subType);
+                            PropertyInfo keyProperty = subType.GetProperties().Where(p => Attribute.IsDefined(p, typeof(KeyAttribute))).FirstOrDefault();
+
                             IList oldValues = (IList)Convert.ChangeType(dbValue, listType);
                             foreach (object newVal in (IList)Convert.ChangeType(newValue, listType))
                             {
-                                // Find data in the old array
-                                generic.Invoke(null, new object[] { oldValues[rowIndex], newVal, context });
-                                rowIndex++;
+                                // Find data in the old array -> insert them
+                                object oldValue = GetValueFromOtherArray(newVal, oldValues, keyProperty);
+                                generic.Invoke(null, new object[] { oldValue, newVal, context });
                             }
-                            
+                            IList newValues = (IList)Convert.ChangeType(newValue, listType);
+                            foreach (object oldVal in (IList)Convert.ChangeType(dbValue, listType))
+                            {
+                                // Find data who aren't in the new value anymore -> delete them
+                                object tempNewValue = GetValueFromOtherArray(oldVal, newValues, keyProperty);
+                                if (tempNewValue == null)
+                                {
+                                    generic.Invoke(null, new object[] { oldVal, tempNewValue, context });
+                                }
+                            }
                         }
                         else
                         {
@@ -75,6 +98,21 @@ namespace DatabaseCaseExtractor
                 }
             }
             return oldEntity;
+        }
+
+        private static object GetValueFromOtherArray(object firstValue, IList secondValues, PropertyInfo keyProperty)
+        {
+            object resultValue = null;
+            object newKeyValue = keyProperty.GetValue(firstValue);
+            for (int iOldValues = 0; iOldValues < secondValues.Count; iOldValues++)
+            {
+                object oldKeyValue = keyProperty.GetValue(secondValues[iOldValues]);
+                if (oldKeyValue.Equals(newKeyValue))
+                {
+                    resultValue = secondValues[iOldValues];
+                }
+            }
+            return resultValue;
         }
 
     }
