@@ -63,11 +63,21 @@ namespace DatabaseCaseExtractor
                             PropertyInfo keyProperty = subType.GetProperties().Where(p => Attribute.IsDefined(p, typeof(KeyAttribute))).FirstOrDefault();
 
                             IList oldValues = (IList)Convert.ChangeType(dbValue, listType);
-                            foreach (object newVal in (IList)Convert.ChangeType(newValue, listType))
+                            if (newValue == null)
                             {
-                                // Find data in the old array -> insert them
-                                object oldValue = GetValueFromOtherArray(newVal, oldValues, keyProperty);
-                                generic.Invoke(null, new object[] { oldValue, newVal, context });
+                                foreach(object oldVal in oldValues)
+                                {
+                                    generic.Invoke(null, new object[] { oldVal, null, context });
+                                }
+                            }
+                            else
+                            {
+                                foreach (object newVal in (IList)Convert.ChangeType(newValue, listType))
+                                {
+                                    // Find data in the old array -> insert them
+                                    object oldValue = GetValueFromOtherArray(newVal, oldValues, keyProperty);
+                                    generic.Invoke(null, new object[] { oldValue, newVal, context });
+                                }
                             }
                             IList newValues = (IList)Convert.ChangeType(newValue, listType);
                             foreach (object oldVal in (IList)Convert.ChangeType(dbValue, listType))
@@ -104,6 +114,10 @@ namespace DatabaseCaseExtractor
         {
             object resultValue = null;
             object newKeyValue = keyProperty.GetValue(firstValue);
+            if (secondValues == null)
+            {
+                return null;
+            }
             for (int iOldValues = 0; iOldValues < secondValues.Count; iOldValues++)
             {
                 object oldKeyValue = keyProperty.GetValue(secondValues[iOldValues]);

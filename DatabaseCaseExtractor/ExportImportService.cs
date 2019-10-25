@@ -339,6 +339,8 @@ namespace DatabaseCaseExtractor
             }
             return includes.ToArray();
         }
+        
         #endregion
     }
+
 }
