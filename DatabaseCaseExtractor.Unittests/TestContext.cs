@@ -6,22 +6,22 @@ using System.Text;
 
 namespace DatabaseCaseExtractor.Unittests
 {
-    public class TestContext: DbContext
-    {
-        public TestContext(DbContextOptions options) : base(options)
-        {
+	public class TestContext : DbContext
+	{
+		public TestContext(DbContextOptions options) : base(options)
+		{
 
-        }
+		}
 
-        #region DbSets
+		#region DbSets
 
-        public DbSet<Table1> Table1s { get; set; }
-        public DbSet<Table2> Table2s { get; set; }
-        public DbSet<Table3> Table3s { get; set; }
-        public DbSet<AdditionalData> AdditionalDatas { get; set; }
+		public DbSet<Table1> Table1s { get; set; }
+		public DbSet<Table2> Table2s { get; set; }
+		public DbSet<Table3> Table3s { get; set; }
+		public DbSet<AdditionalData> AdditionalDatas { get; set; }
 
-        #endregion
+		#endregion
 
 
-    }
+	}
 }

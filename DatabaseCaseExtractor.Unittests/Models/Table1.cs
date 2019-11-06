@@ -6,14 +6,14 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace DatabaseCaseExtractor.Unittests.Models
 {
-    public class Table1
-    {
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public Guid Id { get; set; }
-        public string Name { get; set; }
-        [DatabaseCaseExtractorInclude]
-        public ICollection<Table2> SecondTableRows { get; set; }
+	public class Table1
+	{
+		[Key]
+		[DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+		public Guid Id { get; set; }
+		public string Name { get; set; }
+		[DatabaseCaseExtractorInclude]
+		public ICollection<Table2> SecondTableRows { get; set; }
 
-    }
+	}
 }

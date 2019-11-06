@@ -3,11 +3,11 @@ using System;
 
 namespace DatabaseCaseExtractor.Attributes
 {
-    public class AdditionalDataAttribute : Attribute
-    {
-        public AdditionalDataAttribute()
-        {
-        }
+	public class AdditionalDataAttribute : Attribute
+	{
+		public AdditionalDataAttribute()
+		{
+		}
 
-    }
+	}
 }

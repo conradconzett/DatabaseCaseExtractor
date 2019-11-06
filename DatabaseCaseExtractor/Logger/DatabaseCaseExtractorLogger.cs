@@ -9,110 +9,111 @@ using System.Text.RegularExpressions;
 
 namespace DatabaseCaseExtractor.Logger
 {
-    public class DatabaseCaseExtractorLogger : ILogger
-    {
-        public DatabaseCaseExtractorLogger()
-        {
-        }
+	public class DatabaseCaseExtractorLogger : ILogger
+	{
+		public DatabaseCaseExtractorLogger()
+		{
+		}
 
-        public static List<LogEntry> LogEntries { get; set; } = new List<LogEntry>();
-        public static List<string> LoggedEntries { get; set; } = new List<string>();
-        public static void ClearLogs()
-        {
-            LogEntries = new List<LogEntry>();
-            LoggedEntries = new List<string>();
-        }
-        
-        internal IExternalScopeProvider ScopeProvider { get; set; }
+		public static List<LogEntry> LogEntries { get; set; } = new List<LogEntry>();
+		public static List<string> LoggedEntries { get; set; } = new List<string>();
+		public static void ClearLogs()
+		{
+			LogEntries = new List<LogEntry>();
+			LoggedEntries = new List<string>();
+		}
 
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
-        {
-            if (formatter == null)
-            {
-                throw new ArgumentNullException(nameof(formatter));
-            }
+		internal IExternalScopeProvider ScopeProvider { get; set; }
 
-            var message = formatter(state, exception);
+		public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
+		{
+			if (formatter == null)
+			{
+				throw new ArgumentNullException(nameof(formatter));
+			}
 
-            if (message.Contains("INSERT INTO") || message.Contains("UPDATE") || message.Contains("DELETE")) {
-                // Get Parameters 
-                Dictionary<string, string> parameters = GetParameters(message);
-                foreach(string commandString in message.Split(';'))
-                {
-                    // Get Query
-                    int commandIndex = commandString.IndexOf("INSERT");
-                    if (commandIndex == -1)
-                    {
-                        commandIndex = commandString.IndexOf("UPDATE");
-                    }
-                    if (commandIndex == -1)
-                    {
-                        commandIndex = commandString.IndexOf("DELETE");
-                    }
-                    if (commandIndex == -1)
-                    {
-                        continue;
-                    }
-                    string command = commandString.Substring(commandIndex);
+			var message = formatter(state, exception);
 
-                    if (command.Contains("SELECT @@ROWCOUNT;"))
-                    {
-                        command = command.Substring(0, command.IndexOf("SELECT @@ROWCOUNT;") - 2);
-                    }
+			if (message.Contains("INSERT INTO") || message.Contains("UPDATE") || message.Contains("DELETE"))
+			{
+				// Get Parameters 
+				Dictionary<string, string> parameters = GetParameters(message);
+				foreach (string commandString in message.Split(';'))
+				{
+					// Get Query
+					int commandIndex = commandString.IndexOf("INSERT");
+					if (commandIndex == -1)
+					{
+						commandIndex = commandString.IndexOf("UPDATE");
+					}
+					if (commandIndex == -1)
+					{
+						commandIndex = commandString.IndexOf("DELETE");
+					}
+					if (commandIndex == -1)
+					{
+						continue;
+					}
+					string command = commandString.Substring(commandIndex);
 
-                    // Get Parameters for this commandString
-                    Dictionary<string, string> tempParameters = new Dictionary<string, string>();
-                    foreach(KeyValuePair<string,string> keyValue in parameters)
-                    {
-                        if (command.Contains(keyValue.Key))
-                        {
-                            tempParameters.Add(keyValue.Key, keyValue.Value);
-                        }
-                    }
+					if (command.Contains("SELECT @@ROWCOUNT;"))
+					{
+						command = command.Substring(0, command.IndexOf("SELECT @@ROWCOUNT;") - 2);
+					}
 
-                    LogEntry entry = new LogEntry() { Command = command.Replace("\\r\\n", ""), Parameters = tempParameters };
-                    
+					// Get Parameters for this commandString
+					Dictionary<string, string> tempParameters = new Dictionary<string, string>();
+					foreach (KeyValuePair<string, string> keyValue in parameters)
+					{
+						if (command.Contains(keyValue.Key))
+						{
+							tempParameters.Add(keyValue.Key, keyValue.Value);
+						}
+					}
 
-                    if (!LoggedEntries.Contains(entry.ToString()))
-                    {
-                        LogEntries.Add(entry);
-                        LoggedEntries.Add(entry.ToString());
-                    }
-                }
-            }
-        }
+					LogEntry entry = new LogEntry() { Command = command.Replace("\\r\\n", ""), Parameters = tempParameters };
 
-        private Dictionary<string, string> GetParameters(string message)
-        {
-            int startIndex = message.IndexOf("[Parameters=") + 13;
-            int length = message.IndexOf("], CommandType") - startIndex;
 
-            Dictionary<string, string> result = new Dictionary<string, string>();
-            // Get Parameters-String
-            string onlyParameters = message
-                .Substring(startIndex, length);
-            string[] potentialParameters = onlyParameters.Split(new string[] { "@p" }, StringSplitOptions.RemoveEmptyEntries);
-            foreach(string potentialParameter in potentialParameters)
-            {
-                // Check if it is a parameter -> Means @p[index]=' @p is removed
-                string index = potentialParameter.Substring(0, potentialParameter.IndexOf("='"));
-                if (Regex.IsMatch(index, @"\d"))
-                {
-                    result.Add("@p" + index, potentialParameter.Substring(index.Length + 2, potentialParameter.LastIndexOf("'") - index.Length - 2));
-                }
-            }
-            return result;
-        }
+					if (!LoggedEntries.Contains(entry.ToString()))
+					{
+						LogEntries.Add(entry);
+						LoggedEntries.Add(entry.ToString());
+					}
+				}
+			}
+		}
 
-        public IDisposable BeginScope<TState>(TState state) => ScopeProvider?.Push(state) ?? NullScope.Instance;
+		private Dictionary<string, string> GetParameters(string message)
+		{
+			int startIndex = message.IndexOf("[Parameters=") + 13;
+			int length = message.IndexOf("], CommandType") - startIndex;
 
-        public void Dispose()
-        {
-        }
+			Dictionary<string, string> result = new Dictionary<string, string>();
+			// Get Parameters-String
+			string onlyParameters = message
+					.Substring(startIndex, length);
+			string[] potentialParameters = onlyParameters.Split(new string[] { "@p" }, StringSplitOptions.RemoveEmptyEntries);
+			foreach (string potentialParameter in potentialParameters)
+			{
+				// Check if it is a parameter -> Means @p[index]=' @p is removed
+				string index = potentialParameter.Substring(0, potentialParameter.IndexOf("='"));
+				if (Regex.IsMatch(index, @"\d"))
+				{
+					result.Add("@p" + index, potentialParameter.Substring(index.Length + 2, potentialParameter.LastIndexOf("'") - index.Length - 2));
+				}
+			}
+			return result;
+		}
 
-        public bool IsEnabled(LogLevel logLevel)
-        {
-            return true;
-        }
-    }
+		public IDisposable BeginScope<TState>(TState state) => ScopeProvider?.Push(state) ?? NullScope.Instance;
+
+		public void Dispose()
+		{
+		}
+
+		public bool IsEnabled(LogLevel logLevel)
+		{
+			return true;
+		}
+	}
 }
