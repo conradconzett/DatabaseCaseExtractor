@@ -1,4 +1,7 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using DatabaseCaseExtractor.Attributes;
+using DatabaseCaseExtractor.Models;
+using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -129,5 +132,70 @@ namespace DatabaseCaseExtractor
 			return resultValue;
 		}
 
+
+        public static Dictionary<string, SimpleExportResult> GetExportResult<T>(object data, Dictionary<string, SimpleExportResult> exportResults = null)
+            where T : class, new()
+        {
+            T[] entities;
+            if (!data.GetType().IsGenericType)
+            {
+                entities = new T[] { (T)data };
+            }
+            else
+            {
+                entities = ((HashSet<T>)data).ToArray();
+            }
+
+            if (exportResults == null)
+            {
+                exportResults = new Dictionary<string, SimpleExportResult>();
+            }
+            if (!exportResults.ContainsKey(typeof(T).Name))
+            {
+                exportResults.Add(typeof(T).Name, new SimpleExportResult() { EntityName = typeof(T).Name, EntityData = new List<T>() });
+            }
+
+            foreach (PropertyInfo info in typeof(T).GetProperties()
+                .Where(p => Attribute.IsDefined(p, typeof(DatabaseCaseExtractorIncludeAttribute))))
+            {
+                Type type = info.PropertyType;
+                if (info.PropertyType.GetGenericArguments().Length > 0)
+                {
+                    type = info.PropertyType.GetGenericArguments()[0];
+                }
+                if (!exportResults.ContainsKey(type.Name))
+                {
+                    foreach (T entity in entities)
+                    {
+                        object value = info.GetValue(entity);
+                        MethodInfo method = typeof(Helpers).GetMethod("GetExportResult").MakeGenericMethod(new[] { type });
+                        exportResults = (Dictionary<string, SimpleExportResult>)method.Invoke(null, new object[] { value, exportResults });
+
+                        // exportResults = GetExportResult(info.GetValue(entity), exportResults);
+                        info.SetValue(entity, null);
+                    }
+                }
+            }
+
+            List<T> tempEntities = new List<T>();
+            if (exportResults.ContainsKey(typeof(T).Name))
+            {
+                SimpleExportResult tempExport;
+                if (exportResults.TryGetValue(typeof(T).Name, out tempExport))
+                {
+                    tempEntities = (List<T>)tempExport.EntityData;
+                }
+            }
+
+            tempEntities.AddRange(entities);
+            exportResults[typeof(T).Name] = new SimpleExportResult()
+            {
+                EntityName = typeof(T).Name,
+                EntityData = tempEntities
+            };
+
+
+            return exportResults;
+        }
 	}
 }
