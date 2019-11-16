@@ -11,6 +11,8 @@ using DatabaseCaseExtractor.Attributes;
 using System.ComponentModel.DataAnnotations;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json;
+using System.IO.Compression;
+using System.IO;
 
 namespace DatabaseCaseExtractor
 {
@@ -21,29 +23,48 @@ namespace DatabaseCaseExtractor
 		private DbContext _context;
 		private List<string> _updatedEntries;
 
-        public delegate void ExportEvent(string message);
-        public event ExportEvent exportEvent;
-
-        public delegate void ImportEvent(string message);
-        public event ImportEvent importEvent;
-
-
         public ExportImportService(DbContext dbContext)
 		{
 			_context = dbContext;
 		}
 
-		#region Public-Methods
-		/// <summary>
-		/// Collects data from database and returns it
-		/// </summary>
-		/// <param name="exportLayout"></param>
-		/// <returns></returns>
-		public ExportResult GetExportResult(ExportLayout exportLayout, bool loadAdditionalData = true)
-		{
-			var properties = _context.GetType().GetProperties();
+        #region Public-Methods
+        public void GetExportZip(ExportLayout exportLayout, string outputfile)
+        {
+            List<SimpleExportResult> exportResults = GetExportResult(exportLayout);
+            foreach(SimpleExportResult simpleExportResult in exportResults)
+            {
+                File.WriteAllText(Path.Combine(outputfile, simpleExportResult.EntityName + ".json"), JsonConvert.SerializeObject(simpleExportResult));
+            }
+            /*
+            using (FileStream stream = new FileStream(outputfile, FileMode.Create))
+            {
+                ZipArchive archiv = new ZipArchive(stream, ZipArchiveMode.Create);
+                foreach (SimpleExportResult result in exportResults)
+                {
+                    ZipArchiveEntry entry = archiv.CreateEntry(result.EntityName + ".json");
+                    using (Stream entryStream = entry.Open())
+                    {
+                        var sw = new StreamWriter(entryStream, System.Text.Encoding.UTF8);
+                        sw.Write(JsonConvert.SerializeObject(result));
+                        sw.Flush();
+                        entryStream.Close();
+                    }
+                }
+            }*/
+        }
 
-			PropertyInfo setType = properties.Where(p => p.PropertyType.IsGenericType &&
+        /// <summary>
+        /// Collects data from database and returns it
+        /// </summary>
+        /// <param name="exportLayout"></param>
+        /// <returns></returns>
+        public List<SimpleExportResult> GetExportResult(ExportLayout exportLayout, bool loadAdditionalData = true)
+        {
+            var properties = _context.GetType().GetProperties();
+            Dictionary<string, SimpleExportResult> exports = new Dictionary<string, SimpleExportResult>();
+
+            PropertyInfo setType = properties.Where(p => p.PropertyType.IsGenericType &&
 					p.PropertyType.GetGenericArguments()[0] == typeof(T)).FirstOrDefault();
 
 			if (setType != null)
@@ -131,28 +152,29 @@ namespace DatabaseCaseExtractor
 					Type additionalType = typeof(ExportImportService<>);
 					foreach (ExportLayout subLayout in exportLayout.AdditionalData)
 					{
-                        exportEvent($"AdditionalData:{subLayout.EntityName}");
-
                         PropertyInfo setAdditionalType = properties.Where(p => p.PropertyType.IsGenericType &&
 								p.PropertyType.GetGenericArguments()[0].Name == subLayout.EntityName).FirstOrDefault();
 
 						var addionalInstance = additionalType.MakeGenericType(setAdditionalType.PropertyType.GetGenericArguments()[0]);
 						object subExportLayout = Activator.CreateInstance(addionalInstance, new object[] { _context });
-						additionalDatas.Add(((IExportImportService)subExportLayout).GetExportResult(subLayout, false));
-					}
+
+                        List<SimpleExportResult> tempExportResults = ((IExportImportService)subExportLayout).GetExportResult(subLayout, false);
+                        
+                        foreach(SimpleExportResult temp in tempExportResults)
+                        {
+                            exports.Add(temp.EntityName, temp);
+                        }
+                        
+                    }
 				}
 
-                exportEvent($"MainEntity");
-                if (exportLayout.EntityPrimaryValue != null)
-				{
-                    return new ExportResult() { EntityData = queryable.FirstOrDefault(), AdditionalData = additionalDatas.ToArray(), EntityName = typeof(T).Name };
-				}
-				else
-				{
-                    return new ExportResult() { EntityData = queryable.ToArray(), AdditionalData = additionalDatas.ToArray(), EntityName = typeof(T).Name };
-				}
-			}
-			return null;
+                T entity = queryable.FirstOrDefault();
+                
+                // We get all Properties witch are relation classes
+                exports = Helpers.GetExportResult<T>(entity, exports);
+
+            }
+			return exports.Values.ToList();
 		}
 
 		/// <summary>
@@ -173,7 +195,6 @@ namespace DatabaseCaseExtractor
 
 				foreach (PropertyInfo set in sets)
 				{
-                    importEvent($"Delete data from table: {set.Name}");
 					var queryable = (IQueryable)_context.GetType().GetMethod("Set").MakeGenericMethod(set.PropertyType.GetGenericArguments()[0]).Invoke(_context, null);
 					foreach (object tempRow in queryable)
 					{
@@ -202,7 +223,6 @@ namespace DatabaseCaseExtractor
 				Type additionalType = typeof(ExportImportService<>);
 				foreach (ExportResult additionalData in importData.AdditionalData)
 				{
-                    importEvent($"Import additional data: {additionalData.EntityName}");
                     PropertyInfo setAdditionalType = properties.Where(p => p.PropertyType.IsGenericType &&
 							p.PropertyType.GetGenericArguments()[0].Name == additionalData.EntityName).FirstOrDefault();
 
