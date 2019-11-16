@@ -90,6 +90,10 @@ namespace DatabaseCaseExtractor.Logger
 
 			Dictionary<string, string> result = new Dictionary<string, string>();
 			// Get Parameters-String
+			if (length < 0)
+			{
+				return new Dictionary<string, string>();
+			}
 			string onlyParameters = message
 					.Substring(startIndex, length);
 			string[] potentialParameters = onlyParameters.Split(new string[] { "@p" }, StringSplitOptions.RemoveEmptyEntries);
