@@ -14,12 +14,21 @@ using Newtonsoft.Json;
 
 namespace DatabaseCaseExtractor
 {
+
 	public class ExportImportService<T> : IExportImportService
 			where T : class, new()
 	{
 		private DbContext _context;
 		private List<string> _updatedEntries;
-		public ExportImportService(DbContext dbContext)
+
+        public delegate void ExportEvent(string message);
+        public event ExportEvent exportEvent;
+
+        public delegate void ImportEvent(string message);
+        public event ImportEvent importEvent;
+
+
+        public ExportImportService(DbContext dbContext)
 		{
 			_context = dbContext;
 		}
@@ -122,7 +131,9 @@ namespace DatabaseCaseExtractor
 					Type additionalType = typeof(ExportImportService<>);
 					foreach (ExportLayout subLayout in exportLayout.AdditionalData)
 					{
-						PropertyInfo setAdditionalType = properties.Where(p => p.PropertyType.IsGenericType &&
+                        exportEvent($"AdditionalData:{subLayout.EntityName}");
+
+                        PropertyInfo setAdditionalType = properties.Where(p => p.PropertyType.IsGenericType &&
 								p.PropertyType.GetGenericArguments()[0].Name == subLayout.EntityName).FirstOrDefault();
 
 						var addionalInstance = additionalType.MakeGenericType(setAdditionalType.PropertyType.GetGenericArguments()[0]);
@@ -131,13 +142,14 @@ namespace DatabaseCaseExtractor
 					}
 				}
 
-				if (exportLayout.EntityPrimaryValue != null)
+                exportEvent($"MainEntity");
+                if (exportLayout.EntityPrimaryValue != null)
 				{
-					return new ExportResult() { EntityData = queryable.FirstOrDefault(), AdditionalData = additionalDatas.ToArray(), EntityName = typeof(T).Name };
+                    return new ExportResult() { EntityData = queryable.FirstOrDefault(), AdditionalData = additionalDatas.ToArray(), EntityName = typeof(T).Name };
 				}
 				else
 				{
-					return new ExportResult() { EntityData = queryable.ToArray(), AdditionalData = additionalDatas.ToArray(), EntityName = typeof(T).Name };
+                    return new ExportResult() { EntityData = queryable.ToArray(), AdditionalData = additionalDatas.ToArray(), EntityName = typeof(T).Name };
 				}
 			}
 			return null;
@@ -161,6 +173,7 @@ namespace DatabaseCaseExtractor
 
 				foreach (PropertyInfo set in sets)
 				{
+                    importEvent($"Delete data from table: {set.Name}");
 					var queryable = (IQueryable)_context.GetType().GetMethod("Set").MakeGenericMethod(set.PropertyType.GetGenericArguments()[0]).Invoke(_context, null);
 					foreach (object tempRow in queryable)
 					{
@@ -189,7 +202,8 @@ namespace DatabaseCaseExtractor
 				Type additionalType = typeof(ExportImportService<>);
 				foreach (ExportResult additionalData in importData.AdditionalData)
 				{
-					PropertyInfo setAdditionalType = properties.Where(p => p.PropertyType.IsGenericType &&
+                    importEvent($"Import additional data: {additionalData.EntityName}");
+                    PropertyInfo setAdditionalType = properties.Where(p => p.PropertyType.IsGenericType &&
 							p.PropertyType.GetGenericArguments()[0].Name == additionalData.EntityName).FirstOrDefault();
 
 					var addionalInstance = additionalType.MakeGenericType(setAdditionalType.PropertyType.GetGenericArguments()[0]);
